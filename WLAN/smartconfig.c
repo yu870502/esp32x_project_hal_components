@@ -23,6 +23,7 @@
 #include "esp_mac.h"
 
 #include "smartconfig_monitor.h"
+#include "network_info.h"
 
 /* FreeRTOS event group to signal when we are connected & ready to make a request */
 static EventGroupHandle_t s_wifi_event_group;
@@ -78,7 +79,6 @@ int force_configNet(void *arg)
 
 static int store_configNet_info(void)
 {
-    wifi_config_t wifi_config;
     char ssid[MAX_SSID_LEN + 1] = { 0 };
     char password[MAX_PASSWORD_LEN + 1] = { 0 };
 
@@ -104,6 +104,7 @@ static int store_configNet_info(void)
     // }
     // ESP_LOGI(TAG, "read configNetStatus = %d", configNetStatus);    
 
+    wifi_config_t wifi_config;
     bzero(&wifi_config, sizeof(wifi_config_t));
     if(ESP_OK != (ret = esp_wifi_get_config(WIFI_IF_STA, &wifi_config))){
         ESP_LOGW(TAG, "esp_wifi_get_config error (%s)", esp_err_to_name(ret));

@@ -23,7 +23,7 @@ typedef struct __key_evt_st{
     key_evt_cb_t cb;
 }key_evt_t;
 
-char *TAG = "smartconfig_moni";
+static const char *TAG = "smartconfig_moni";
 
 char *enum_btn_event_string[] = {
     ENUM_TO_STR(BTN_DOWN),
