@@ -18,13 +18,11 @@
 
 #define EXAMPLE_READ_LEN                    256
 
-typedef void (* get_humidity_process_t)(float h);
 
 typedef struct humidity_obj_t{
     struct humidity_obj_t *humidity_obj;
-    get_humidity_process_t humidity_process;
     float procss_arg; 
-    float curVal;
+    int curVal;
 }humidity_t;
 extern humidity_t *humiObj;
 

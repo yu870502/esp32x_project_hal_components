@@ -3,6 +3,7 @@
  *
  * SPDX-License-Identifier: CC0-1.0
  */
+#include <stdatomic.h>
 
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
@@ -22,7 +23,7 @@ static const char *TAG = "ec11";
 #define EXAMPLE_EC11_GPIO_A 14
 #define EXAMPLE_EC11_GPIO_B 12
 
-int ec11_start(ec11_pcnt_t *ec11)
+int ec11_pcnt_init(ec11_t *ec11)
 {
     if(!ec11){
         ESP_LOGE(TAG, "func[%s] args err", __func__);
@@ -73,9 +74,7 @@ int ec11_start(ec11_pcnt_t *ec11)
         .on_reach = ec11->ec11_rotary_handle,
     };
     // QueueHandle_t ec11_evt_queue = xQueueCreate(10, sizeof(int));
-    // ESP_ERROR_CHECK(pcnt_unit_register_event_callbacks(pcnt_unit, &cbs, ec11_evt_queue));
     ESP_ERROR_CHECK(pcnt_unit_register_event_callbacks(pcnt_unit, &cbs, ec11->ec11_evt_queue));
-
 
     ESP_LOGI(TAG, "enable pcnt unit");
     ESP_ERROR_CHECK(pcnt_unit_enable(pcnt_unit));
@@ -87,14 +86,84 @@ int ec11_start(ec11_pcnt_t *ec11)
     return 0;
 }
 
-ec11_pcnt_t *ec11_create(ec11_rotary_handle_t ec11_rotary_handle, QueueHandle_t ec11_evt_queue)
+#define EC11_KEY_GPIO 39
+#define EC11_GPIO_INPUT_PIN_SEL (1ULL<<EC11_KEY_GPIO)
+
+static TaskHandle_t key_task_handle = NULL;
+
+static uint32_t last_time = 0;
+uint32_t cnt_test = 0;
+static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
-    if(!ec11_rotary_handle || !ec11_evt_queue){
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    
+    uint32_t now = xTaskGetTickCountFromISR();
+    if (now - last_time > pdMS_TO_TICKS(50)) {  // 消抖
+        if (gpio_get_level(EC11_KEY_GPIO) == 0) {  // 确认是按下状态
+            last_time = now;
+            cnt_test++;
+            vTaskNotifyGiveFromISR(key_task_handle, &xHigherPriorityTaskWoken);
+        }
+    }
+    
+    if(xHigherPriorityTaskWoken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+static void key_task(void* arg)
+{
+    while(1) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        printf("EC11 Key pressed!\n");
+        printf("cnt_test: %ld\n", cnt_test);
+    }
+}
+    
+int ec11_key_init(ec11_t *ec11)
+{
+    xTaskCreate(key_task, "key_task", 2048, NULL, 10, &key_task_handle);
+
+    //zero-initialize the config structure.
+    gpio_config_t io_conf = {};
+
+    //interrupt of rising edge
+    io_conf.intr_type = GPIO_INTR_NEGEDGE;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = EC11_GPIO_INPUT_PIN_SEL;
+    // io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    gpio_config(&io_conf);
+
+    gpio_isr_handler_add(EC11_KEY_GPIO, gpio_isr_handler, NULL);
+
+    return 0;
+}
+
+int ec11_init(ec11_t *ec11)
+{
+    if(!ec11){
+        ESP_LOGE(TAG, "func[%s] args err", __func__);
+        return -1;
+    }
+    if(ec11_pcnt_init(ec11)){
+        ESP_LOGE(TAG, "func[%s] ec11_pcnt_init err", __func__);
+        return -1;
+    }
+    if(ec11_key_init(ec11)){
+        ESP_LOGE(TAG, "func[%s] ec11_key_init err", __func__);
+        return -1;
+    }
+    return 0;
+}
+
+ec11_t *ec11_create(ec11_rotary_handle_t ec11_rotary_handle, QueueHandle_t ec11_evt_queue)
+{
+    if(!ec11_rotary_handle){
         ESP_LOGE(TAG, "func[%s] args err", __func__);
         return NULL;
     }
 
-    ec11_pcnt_t *ec11 = calloc(1, sizeof(ec11_pcnt_t));
+    ec11_t *ec11 = calloc(1, sizeof(ec11_t));
     if(!ec11){
         ESP_LOGE(TAG, "func[%s] calloc err", __func__);
         return NULL;
@@ -106,7 +175,7 @@ ec11_pcnt_t *ec11_create(ec11_rotary_handle_t ec11_rotary_handle, QueueHandle_t 
     return ec11;
 }
 
-int ec11_destroy(ec11_pcnt_t *ec11)
+int ec11_destroy(ec11_t *ec11)
 {
     if(!ec11){
         ESP_LOGE(TAG, "func[%s] args err", __func__);

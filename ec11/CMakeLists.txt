@@ -5,7 +5,7 @@ if(${target} STREQUAL "linux")
 endif()
 
 set(srcs
-    "rotary.c")
+    "ec11.c")
 
 #set(include_dirs "include")
 set(includes 
